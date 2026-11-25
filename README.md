@@ -146,6 +146,7 @@ Folders named in your own README conventions are followed if a project already h
 - **Documents are data, not instructions.** If a file contains text addressed to an AI, the agent ignores it and reports it.
 - **No overwriting.** Sources are never modified. Existing Markdown and inventory files are archived before a re-run.
 - **No permanent installs, no macros.**
+- **Run journal.** At the end of each run the agent appends a short entry (task, steps, files changed, commands, outcome) to `.claude/journal.md` in the project, or to `~/.claude/journal.md` if there is no project. It never writes document content, secrets or personal data there, and the file is meant to stay local and uncommitted (add it to `.gitignore`). If it cannot write the file, it says so in its report.
 - **Temporary Python environment.** `uv run --with` downloads packages from PyPI into uv's cache. If Claude Code's sandbox blocks the network (a "tunnel error"), the agent re-runs the command allowing `pypi.org` and `files.pythonhosted.org`. The permission system may also ask you to approve it, or refuse it. If it is refused, the agent falls back to `markitdown`, `pdftotext` and `pandoc`, states the loss of fidelity in each file's header and marks PDFs `needs review`. To allow it without prompts, add a Bash permission rule for `uv run --no-project --with *` in your Claude Code settings.
 - The agent can run shell commands and write files. As with any agent you get from someone else, **read `agents/doc-to-markdown.md` before installing it**.
 
@@ -179,6 +180,7 @@ The agent is one Markdown file. Common changes:
 - **Model.** `model: sonnet` in the front matter. Use a smaller model for clean, simple files in bulk, or a larger one for dense documents where an error would be costly.
 - **Folder names.** Change the folder convention section.
 - **Inventory columns.** Change the tables in Step 2 to match your own schema.
+- **Journal.** Delete the `## Journal` section if you do not want the agent to write a run journal.
 
 ## License
 
