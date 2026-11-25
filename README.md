@@ -52,20 +52,22 @@ Python libraries (`pymupdf4llm`, `openpyxl`, `python-pptx`, `python-docx`) are n
 
 ### Step 1: Convert
 
-1. **Plan.** Lists the sources, checks for a text layer, hashes each file and skips files unchanged since the last run.
+1. **Plan.** Lists the sources, hashes each file and skips files unchanged since the last run. It **classifies each PDF** (born-digital, scan with a hidden text layer, text layer with defective encoding, line-numbered publisher proof, true scan), detects byte-identical duplicates and files with the same text but different bytes, and shows the method and rough effort. You choose a mode per file or folder: **`full`** for core documents (broken tables are rebuilt by hand, OCR misreads are corrected) or **`light`** for background reading (cheaper, tables left as produced).
 2. **Convert** with the right method per type:
 
    | Type | Method |
    |---|---|
-   | PDF with text | `pymupdf4llm`, one `<!-- page N -->` marker per page |
-   | Scanned PDF | `ocrmypdf`, then as above |
+   | Born-digital PDF | `pymupdf4llm` (its built-in OCR switched off), one `<!-- page N -->` marker per page |
+   | Scan, or PDF with a hidden OCR layer | Local OCR at 300 dpi; the embedded layer is only an independent cross-check |
+   | PDF with defective encoding or margin line numbers | `pdftotext -layout` or a custom PyMuPDF extractor, with symbols restored from page renders |
    | Excel | `openpyxl`, cell by cell, with comments, validation and formatting documented |
    | PowerPoint | `python-pptx`, one section per slide, with speaker notes |
    | Word | `pandoc`, keeping tracked changes, comments and footnotes |
 
-3. **Quality gate** on every file: page count matches, word coverage above 99% against the source text, table and formula counts, and a visual comparison of every page with formulas, tables or charts. A file that fails is `needs review`, never `done`.
-4. **Manifest and README.** Writes `manifest.csv` (hash, method, tool versions, checks, status, limitations) and a `README.md` with the document map, conventions and changelog.
-5. **Stops** and waits for your review.
+3. **Deterministic fixes (required).** When a value is corrupted and the source itself shows the right one (a lost decimal point, a lost minus sign, a replacement glyph), the agent fixes it and logs the page, the cell, the old and new value and the evidence. It never fixes a value by inference from other numbers.
+4. **Verification and confidence.** A page is *verified* when its words are covered at 99.5% or more, every table, formula, figure and number on it was rendered and compared with the source, and it has no unresolved defect. Each file gets a **confidence percentage** (verified pages divided by total pages). **`done` means 100%, nothing else.** Below that the file is `needs review`, with the percentage, the exact list of pages to re-check, and a scope: `minor` (95% or more, or at most 3 pages), `partial` (70 to 94%) or `major` (below 70%). A bundled script checks words, numbers (corrupted table cells show up as numbers that are missing or that do not exist in the source), replacement glyphs and per-page coverage.
+5. **Manifest and README.** Writes `manifest.csv` (hash, class, mode, method, tool versions, coverage, pages rendered, fixes applied, confidence, pages to review, status, limitations) and a `README.md` with the document map, conventions, a "not converted yet" list and a changelog.
+6. **Stops** and waits for your review.
 
 ### Step 2: Concept inventory (only when you ask)
 
@@ -88,6 +90,10 @@ Every Markdown file starts with a YAML front matter and a header block giving th
 | `<!-- page N -->` / `<!-- slide N -->` | Start of PDF page or slide N |
 | `$…$`, `$$…$$` | Formulas in LaTeX, checked against the page render |
 | `> **[Figure — page N] …**` | Converter's description of a chart, **not source text** |
+| `> **[Text inside figure — page N, unverified]** …` | Text pulled out of a vector figure |
+| `> *[Image without text content — page N]*`, `> *[Figure not described — page N]*` | Decorative image; meaningful figure left undescribed (light mode) |
+| `[?]` | A reading that could not be verified at 250 dpi |
+| `Converter notes` | A section for everything the converter wrote (fixes log, OCR corrections, footers), never mixed with source text |
 | `~~text~~`, `<ins>text</ins>` | Deleted and inserted text shown in the source |
 | `<br>` | Line break in a table cell |
 | `*(sic, as printed)*` | A typo kept on purpose |
@@ -105,20 +111,21 @@ Folders named in your own README conventions are followed if a project already h
 
 ## Test status
 
-Tested on 2026-11-25 as a one-off run of step 1 on a 7-page regulatory PDF and a two-sheet Excel workbook:
+Tested on 2026-11-25 in several runs of step 1, each followed by a revision of the instructions:
 
-| | PDF | Excel |
-|---|---|---|
-| Method | `pymupdf4llm`, then repair of formulas and heading levels | `openpyxl`, cell by cell |
-| Result | 7 of 7 page markers, 99.47% word coverage (the missing tokens are formula glyphs rewritten in LaTeX) | 183 of 183 non-empty cells found verbatim |
+- **Regulatory sample:** a 7-page PDF and a two-sheet Excel workbook (page markers matched, 183 of 183 cells found verbatim), compared with an earlier manually proofread conversion.
+- **Academic bibliography, 23 files (about 700 pages):** born-digital PDFs, older journal articles that are scans with a hidden text layer, a true scan, a text layer with defective encoding, French papers, two Word files, a byte-identical duplicate and a same-text pair with different bytes, in both `full` and `light` modes. Page markers matched the page count on every PDF, and the merged manifest and README were checked against the sources (hashes, sizes, page counts).
 
-The test also compared the output with an earlier, manually proofread conversion of the same files. The PDF output matched it on prose and was better on headings and front matter. The Excel output was more complete on merged ranges, comments and formatting rules, but the earlier version read better because it used a semantic header row. The instructions were revised after the test to address that, and the other gaps it exposed (network handling, the word-coverage method, heading and footnote rules).
+What those runs showed, and what the current instructions fix: word coverage alone misses corrupted table cells (a lost decimal point passed at 99.8%), the text layer of a scan cannot be trusted, converter defaults can inject OCR noise, and a binary pass/fail status hides whether one page or forty need re-checking. The current version adds the numeric check, the scan policy, required deterministic fixes and the graded confidence score.
 
-Not tested yet: step 2 (concept inventory), PowerPoint, Word, OCR of scanned PDFs, and the fallback path without the Python libraries.
+**Not yet tested with the current instructions:** `full` mode on scans and the confidence score (the last full-mode run used the previous version), step 2 (concept inventory), PowerPoint, and the fallback path without the Python libraries.
+
+**Tip.** Claude Code may start a sub-agent from an older copy of the agent file if you edited it during a session. Start a new session after installing or updating it.
 
 ## Limitations
 
-- It has been tested on a small sample (see Test status), not on a full project. Review step 1 before asking for step 2.
+- It has been tested on a sample (see Test status), not on a full project. Review step 1 before asking for step 2.
+- Verification is expensive: reaching `done` (100%) in `full` mode means rendering every page with a table, formula, figure or number. Earlier runs cost roughly 0.5k tokens per page in `light` mode and 2.3k in `full` mode. Use `light` for background reading and read the confidence percentage to decide what still needs a look.
 - Fidelity depends on the source. Charts without data labels are described approximately, and the description is marked as converter text.
 - Old Office formats need LibreOffice.
 - Very large documents produce very large Markdown files. The agent adds a table of contents with line ranges above about 150 KB and does not split or shorten them unless you ask.
