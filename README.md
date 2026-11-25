@@ -121,4 +121,4 @@ The agent is one Markdown file. Common changes:
 
 ## License
 
-Add the license of your choice before publishing.
+[MIT](LICENSE)
