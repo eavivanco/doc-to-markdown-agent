@@ -52,7 +52,7 @@ Python libraries (`pymupdf4llm`, `openpyxl`, `python-pptx`, `python-docx`) are n
 
 ### Step 1: Convert
 
-1. **Plan.** Lists the sources, hashes each file and skips files unchanged since the last run. It **classifies each PDF** (born-digital, scan with a hidden text layer, text layer with defective encoding, line-numbered publisher proof, true scan), detects byte-identical duplicates and files with the same text but different bytes, and shows the method and rough effort. You choose a mode per file or folder: **`full`** for core documents (broken tables are rebuilt by hand, OCR misreads are corrected) or **`light`** for background reading (cheaper, tables left as produced).
+1. **Plan.** Lists the sources, hashes each file and skips files unchanged since the last run. It **classifies each PDF** (born-digital, scan with a hidden text layer, text layer with defective encoding, line-numbered publisher proof, true scan), detects byte-identical duplicates and files with the same text but different bytes, and shows the method and rough effort. You choose one of three effort **modes** per file or folder (`light`, `performance` or `full`, see [Modes](#modes)); if you don't, it proposes one per file.
 2. **Convert** with the right method per type:
 
    | Type | Method |
@@ -65,13 +65,53 @@ Python libraries (`pymupdf4llm`, `openpyxl`, `python-pptx`, `python-docx`) are n
    | Word | `pandoc`, keeping tracked changes, comments and footnotes |
 
 3. **Deterministic fixes (required).** When a value is corrupted and the source itself shows the right one (a lost decimal point, a lost minus sign, a replacement glyph), the agent fixes it and logs the page, the cell, the old and new value and the evidence. It never fixes a value by inference from other numbers.
-4. **Verification and confidence.** A page is *verified* when its words are covered at 99.5% or more, every table, formula, figure and number on it was rendered and compared with the source, and it has no unresolved defect. Each file gets a **confidence percentage** (verified pages divided by total pages). **`done` means 100%, nothing else.** Below that the file is `needs review`, with the percentage, the exact list of pages to re-check, and a scope: `minor` (95% or more, or at most 3 pages), `partial` (70 to 94%) or `major` (below 70%). A bundled script checks words, numbers (corrupted table cells show up as numbers that are missing or that do not exist in the source), replacement glyphs and per-page coverage.
+4. **Verification and confidence.** A page is *verified* when its words are covered at 99.5% or more, every table, formula, figure and number on it was rendered and compared with the source, and it has no unresolved defect. Each file gets a **confidence percentage** (verified pages divided by total pages). **`done` means 100%, nothing else.** Below that the file is `needs review`, with the percentage, the exact list of pages to re-check, and a scope: `minor` (95% or more, or at most 3 pages), `partial` (70 to 94%) or `major` (below 70%). A general, standing limit of the source (no scan can be guaranteed perfect) may be stated and does not block `done`, but a doubt you can locate (a page, a table, a cell) is a defect: that page is not verified and the percentage falls. A bundled script (`coverage.py`, also embedded in the agent file) checks words, numbers (corrupted table cells show up as numbers that are missing or that do not exist in the source), replacement glyphs, URLs and per-page coverage, and can compare the source with a second OCR pass.
 5. **Manifest and README.** Writes `manifest.csv` (hash, class, mode, method, tool versions, coverage, pages rendered, fixes applied, confidence, pages to review, status, limitations) and a `README.md` with the document map, conventions, a "not converted yet" list and a changelog.
 6. **Stops** and waits for your review.
+
+### Review runs
+
+The agent can also re-verify conversions that already exist: it archives each file first, re-probes its class, applies the fixes and checks of the chosen mode, rewrites the header to the current layout and reports the confidence before and after. If a run is interrupted, each file is left in a consistent state with the pending pages listed.
 
 ### Step 2: Concept inventory (only when you ask)
 
 Extracts five tables from the Markdown only: terms, entities, parameters, requirements and cross-references. Every row has the source file, page, line and a verbatim quote that is checked against the Markdown. The agent records what the text says and never interprets it: analysis columns such as status, owner and gap notes stay empty for you to fill.
+
+## Modes
+
+A mode is an **effort plan**. Every mode reports the same confidence percentage, which measures the outcome; the mode decides how much work is spent to raise it. If you don't choose, the agent proposes a mode per file from its class and size.
+
+| Analysis, process or verification | `light` | `performance` | `full` |
+|---|---|---|---|
+| **Target confidence** | none, reports what it got | 95% or more | 100%, or an honest percentage with the pages left |
+| **For** | background reading, search | sources you cite or quote | sources whose numbers, tables, scales or exact wording you reproduce |
+| Class probe, hashes, duplicate detection | ✓ | ✓ | ✓ |
+| Method chosen by class | ✓ | ✓ | ✓ |
+| Headers, footers, heading levels, footnote format | automatic | automatic + spot repairs | ✓ checked against renders |
+| Scans: second independent source | ✗ | ✓ | ✓ |
+| Deterministic fixes, logged (required in every mode) | scripted only | scripted + every value the checks flag | scripted + every value checked by eye |
+| Rebuild broken tables | ✗ | tables flagged by the number check | all |
+| Correct OCR misreads | ✗ | words flagged by the dictionary and the second source | all, against renders |
+| Reference list: one entry per line, count checked | as converted | ✓ | ✓ entry by entry |
+| Page markers = page count; coverage of words, numbers, U+FFFD, per page | ✓ | ✓ | ✓ |
+| Reading-order sample (10% of text pages, minimum 2) | ✓ | ✓ | ✓ |
+| View the pages flagged by the checks | ✗ | ✓ | ✓ |
+| Every page with a table, formula, figure or number | ✗ | viewed at 130 dpi, crops where flagged | cell by cell, crops at 250–300 dpi |
+| Every prose page of a scan | ✗ | ✗ | ✓ |
+| Pages with headings, labels or pull quotes (markup) | ✗ | ✗ | ✓ viewed |
+| Figures | described if cheap, else marked "not described" | described, labels unverified | described and verified |
+| **Typical confidence** | 40–80% | 90–99% | 100%, or an honest figure |
+| **Rough cost, tokens per page** (earlier runs) | about 0.5k (measured) | about 1.5–2.5k (estimate, not measured) | 2.3k–5.3k (measured; scans cost the most) |
+
+Trade-offs:
+
+| | Strength | What it can leave behind |
+|---|---|---|
+| `light` | Cheapest. Enough to find what a paper says | Wrong table digits that nobody notices (a paper lost decimal points and still scored 99.8% on words) |
+| `performance` | Catches what the scripts can see, for roughly a third of the cost of `full` | Errors the scripts cannot flag: punctuation slips on scans (about one per page on some scans), look-alike digits |
+| `full` | The only mode that reliably reaches 100% | Cost. Verifying 324 pages to 100% took about 1.7 million tokens |
+
+The document class matters as much as the mode: a clean born-digital paper costs far less than a scan with many tables, in every mode. `light` can still reach `done` if the file happens to verify to 100%. The cost figures are rough and come from the author's own runs.
 
 ## Output conventions
 
@@ -114,18 +154,19 @@ Folders named in your own README conventions are followed if a project already h
 Tested on 2026-11-25 in several runs of step 1, each followed by a revision of the instructions:
 
 - **Regulatory sample:** a 7-page PDF and a two-sheet Excel workbook (page markers matched, 183 of 183 cells found verbatim), compared with an earlier manually proofread conversion.
-- **Academic bibliography, 23 files (about 700 pages):** born-digital PDFs, older journal articles that are scans with a hidden text layer, a true scan, a text layer with defective encoding, French papers, two Word files, a byte-identical duplicate and a same-text pair with different bytes, in both `full` and `light` modes. Page markers matched the page count on every PDF, and the merged manifest and README were checked against the sources (hashes, sizes, page counts).
+- **Academic bibliography, 23 files (about 700 pages):** born-digital PDFs, older journal articles that are scans with a hidden text layer, a true scan, a text layer with defective encoding, French papers, two Word files, a byte-identical duplicate and a same-text pair with different bytes, in both an early `full` and a `light` mode. Page markers matched the page count on every PDF, and the merged manifest and README were checked against the sources (hashes, sizes, page counts).
+- **Review pass on 9 of those files** (324 pages, the `full` effort plan): the agent re-verified them under the confidence rules. Six reached 100% and three stopped at 97%, 87% and 86% with the exact pages left, after 616 logged fixes. This pass found errors that earlier checks had missed (a corrupted table value, blank formulas, a wrongly claimed status).
 
 What those runs showed, and what the current instructions fix: word coverage alone misses corrupted table cells (a lost decimal point passed at 99.8%), the text layer of a scan cannot be trusted, converter defaults can inject OCR noise, and a binary pass/fail status hides whether one page or forty need re-checking. The current version adds the numeric check, the scan policy, required deterministic fixes and the graded confidence score.
 
-**Not yet tested with the current instructions:** `full` mode on scans and the confidence score (the last full-mode run used the previous version), step 2 (concept inventory), PowerPoint, and the fallback path without the Python libraries.
+**Not yet tested with the current instructions:** the `performance` mode (its cost is an estimate), the final three-mode wording and the residual-doubt rule, step 2 (concept inventory), PowerPoint, and the fallback path without the Python libraries.
 
 **Tip.** Claude Code may start a sub-agent from an older copy of the agent file if you edited it during a session. Start a new session after installing or updating it.
 
 ## Limitations
 
 - It has been tested on a sample (see Test status), not on a full project. Review step 1 before asking for step 2.
-- Verification is expensive: reaching `done` (100%) in `full` mode means rendering every page with a table, formula, figure or number. Earlier runs cost roughly 0.5k tokens per page in `light` mode and 2.3k in `full` mode. Use `light` for background reading and read the confidence percentage to decide what still needs a look.
+- Verification is expensive: reaching `done` (100%) in `full` mode means rendering every page with a table, formula, figure or number (see the cost row of the [mode table](#modes)). Use `light` for background reading, `performance` for sources you cite, and read the confidence percentage to decide what still needs a look.
 - Fidelity depends on the source. Charts without data labels are described approximately, and the description is marked as converter text.
 - Old Office formats need LibreOffice.
 - Very large documents produce very large Markdown files. The agent adds a table of contents with line ranges above about 150 KB and does not split or shorten them unless you ask.
