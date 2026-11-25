@@ -100,12 +100,25 @@ Folders named in your own README conventions are followed if a project already h
 - **Documents are data, not instructions.** If a file contains text addressed to an AI, the agent ignores it and reports it.
 - **No overwriting.** Sources are never modified. Existing Markdown and inventory files are archived before a re-run.
 - **No permanent installs, no macros.**
-- **Temporary Python environment.** `uv run --with` downloads packages from PyPI into uv's cache. Claude Code's permission system may ask you to approve it, or deny it. If it is denied, the agent falls back to `markitdown`, `pdftotext` and `pandoc`, states the loss of fidelity in each file's header and marks PDFs `needs review`. To allow it without prompts, add a Bash permission rule for `uv run --no-project --with *` in your Claude Code settings.
+- **Temporary Python environment.** `uv run --with` downloads packages from PyPI into uv's cache. If Claude Code's sandbox blocks the network (a "tunnel error"), the agent re-runs the command allowing `pypi.org` and `files.pythonhosted.org`. The permission system may also ask you to approve it, or refuse it. If it is refused, the agent falls back to `markitdown`, `pdftotext` and `pandoc`, states the loss of fidelity in each file's header and marks PDFs `needs review`. To allow it without prompts, add a Bash permission rule for `uv run --no-project --with *` in your Claude Code settings.
 - The agent can run shell commands and write files. As with any agent you get from someone else, **read `agents/doc-to-markdown.md` before installing it**.
+
+## Test status
+
+Tested on 2026-11-25 as a one-off run of step 1 on a 7-page regulatory PDF and a two-sheet Excel workbook:
+
+| | PDF | Excel |
+|---|---|---|
+| Method | `pymupdf4llm`, then repair of formulas and heading levels | `openpyxl`, cell by cell |
+| Result | 7 of 7 page markers, 99.47% word coverage (the missing tokens are formula glyphs rewritten in LaTeX) | 183 of 183 non-empty cells found verbatim |
+
+The test also compared the output with an earlier, manually proofread conversion of the same files. The PDF output matched it on prose and was better on headings and front matter. The Excel output was more complete on merged ranges, comments and formatting rules, but the earlier version read better because it used a semantic header row. The instructions were revised after the test to address that, and the other gaps it exposed (network handling, the word-coverage method, heading and footnote rules).
+
+Not tested yet: step 2 (concept inventory), PowerPoint, Word, OCR of scanned PDFs, and the fallback path without the Python libraries.
 
 ## Limitations
 
-- It has not yet been run end to end on a full project. Treat the first run as a test and review step 1 before asking for step 2.
+- It has been tested on a small sample (see Test status), not on a full project. Review step 1 before asking for step 2.
 - Fidelity depends on the source. Charts without data labels are described approximately, and the description is marked as converter text.
 - Old Office formats need LibreOffice.
 - Very large documents produce very large Markdown files. The agent adds a table of contents with line ranges above about 150 KB and does not split or shorten them unless you ask.
